@@ -4,71 +4,45 @@ import { StyleSheet, View, Alert } from "react-native";
 import { Button, Text, TextInput, ActivityIndicator } from "react-native-paper";
 import { SafeAreaView } from "react-native-safe-area-context";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { cadastrarService } from "../../../services/cadastrarService";
+import { loginService } from "../../../services/loginService";
 
-export default function Cadastro() {
-  const [nome, setNome] = useState("");
+export default function Login() {
   const [email, setEmail] = useState("");
-  const [telefone, setTelefone] = useState("");
   const [senha, setSenha] = useState("");
   const [mostrarSenha, setMostrarSenha] = useState(false);
   const [loading, setLoading] = useState(false);
 
-  function formatarTelefone(texto: string) {
-    const apenasNumeros = texto.replace(/\D/g, "").slice(0, 11);
-    if (apenasNumeros.length <= 2) return apenasNumeros;
-    if (apenasNumeros.length <= 7) return `(${apenasNumeros.slice(0, 2)})${apenasNumeros.slice(2)}`;
-    return `(${apenasNumeros.slice(0, 2)})${apenasNumeros.slice(2, 7)}-${apenasNumeros.slice(7)}`;
-  }
-
-  async function registrar() {
-    if (!nome || !email || !telefone || !senha) {
+  async function entrar() {
+    if (!email || !senha) {
       Alert.alert("Atenção", "Preencha todos os campos!");
-      return;
-    }
-    if (!email.includes("@")) {
-      Alert.alert("Erro", "E-mail inválido");
-      return;
-    }
-    if (telefone.replace(/\D/g, "").length !== 11) {
-      Alert.alert("Erro", "Telefone deve ter 11 dígitos");
       return;
     }
 
     setLoading(true);
     try {
-      const resultado = await cadastrarService({ nome, email, telefone, senha }) as any;
+      const user = await loginService({ email, senha }) as any;
 
-      if (resultado && resultado.id) {
-        await AsyncStorage.setItem("userId", resultado.id);
+      if (user && user.id) {
+        await AsyncStorage.setItem("userId", user.id.toString());
         setLoading(false);
+        
+        // Tenta a rota padrão do seu Tabs layout
         router.replace("/main/home");
       } else {
-        Alert.alert("Erro", resultado.erro || "Falha ao cadastrar");
         setLoading(false);
+        Alert.alert("Erro de Login", "A API não retornou um usuário válido ou as credenciais estão erradas.");
       }
-    } catch (error) {
-      Alert.alert("Erro", "Não foi possível conectar ao servidor");
+    } catch (error: any) {
       setLoading(false);
-    } finally {
-      setLoading(false);
+      // Mostra o erro exato na tela do seu celular para sabermos se é a API ou a rota
+      Alert.alert("Erro de Conexão/Código", error.message || "Erro desconhecido");
     }
   }
 
   return (
     <SafeAreaView style={styles.safeArea} edges={["top"]}>
       <View style={styles.container}>
-        <Text style={styles.titulo}>Criar Conta</Text>
-
-        <TextInput
-          label="Nome"
-          mode="outlined"
-          value={nome}
-          onChangeText={setNome}
-          style={styles.input}
-          activeOutlineColor="#1565C0"
-          left={<TextInput.Icon icon="account" disabled />}
-        />
+        <Text style={styles.titulo}>Login do Cliente</Text>
 
         <TextInput
           label="Email"
@@ -80,19 +54,6 @@ export default function Cadastro() {
           style={styles.input}
           activeOutlineColor="#1565C0"
           left={<TextInput.Icon icon="email" disabled />}
-        />
-
-        <TextInput
-          label="Telefone"
-          mode="outlined"
-          value={telefone}
-          onChangeText={(texto) => setTelefone(formatarTelefone(texto))}
-          keyboardType="phone-pad"
-          placeholder="(XX)XXXXX-XXXX"
-          maxLength={14}
-          style={styles.input}
-          activeOutlineColor="#1565C0"
-          left={<TextInput.Icon icon="phone" disabled />}
         />
 
         <TextInput
@@ -117,16 +78,16 @@ export default function Cadastro() {
           mode="contained"
           buttonColor="#1565C0"
           style={styles.botao}
-          onPress={registrar}
+          onPress={entrar}
           disabled={loading}
         >
-          {loading ? <ActivityIndicator color="#FFFFFF" size="small" /> : "Cadastrar"}
+          {loading ? <ActivityIndicator color="#FFFFFF" size="small" /> : "Entrar"}
         </Button>
 
         <Text style={styles.texto}>
-          Já tem conta?{" "}
-          <Text style={styles.link} onPress={() => router.push("/auth/login")}>
-            Fazer Login
+          Não tem conta?{" "}
+          <Text style={styles.link} onPress={() => router.push("/auth/cadastro")}>
+            Criar conta
           </Text>
         </Text>
       </View>
