@@ -37,19 +37,36 @@ export default function Cadastro() {
 
     setLoading(true);
     try {
-      const resultado = await cadastrarService({ nome, email, telefone, senha }) as any;
+      const resultado = await cadastrarService({ nome, email, telefone, senha });
 
-      if (resultado && resultado.id) {
-        await AsyncStorage.setItem("userId", resultado.id);
-        setLoading(false);
-        router.replace("/main/home");
-      } else {
+      if (!resultado.ok) {
         Alert.alert("Erro", resultado.erro || "Falha ao cadastrar");
-        setLoading(false);
+        return;
       }
+
+      const userId = resultado.data?.id;
+
+      if (!userId) {
+        Alert.alert("Erro", "Não foi possível obter ID do usuário");
+        return;
+      }
+
+      await AsyncStorage.setItem("userId", String(userId));
+
+      setNome("");
+      setEmail("");
+      setTelefone("");
+      setSenha("");
+
+      Alert.alert("Sucesso", "Conta criada com sucesso!", [
+        {
+          text: "OK",
+          onPress: () => router.replace("/main/home"), // ✅ replace para não voltar ao cadastro
+        },
+      ]);
+
     } catch (error) {
       Alert.alert("Erro", "Não foi possível conectar ao servidor");
-      setLoading(false);
     } finally {
       setLoading(false);
     }

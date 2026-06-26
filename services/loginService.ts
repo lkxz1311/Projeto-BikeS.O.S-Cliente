@@ -1,10 +1,10 @@
 interface LoginResponse {
-  token: string;
-  usuario: {
-    id: string;
-    nome: string;
-    email: string;
-  };
+  id: string;
+  nome: string;
+  email: string;
+  telefone: string;
+  createdAt: string;
+  updatedAt: string;
 }
 
 interface LoginResult {

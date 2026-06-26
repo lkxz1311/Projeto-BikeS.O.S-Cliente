@@ -17,23 +17,38 @@ export default function Login() {
       Alert.alert("Atenção", "Preencha todos os campos!");
       return;
     }
+    if (!email.includes("@")) {
+      Alert.alert("Erro", "E-mail inválido");
+      return;
+    }
 
     setLoading(true);
     try {
-      const user = await loginService({ email, senha }) as any;
-      const userId = user?.id || user?._id || user?.user?.id || user?.data?.id;
+      const resultado = await loginService({ email, senha });
 
-      if (userId) {
-        await AsyncStorage.setItem("userId", userId.toString());
-        setLoading(false);
-        router.replace({ pathname: "/main/home" } as any);
-      } else {
-        setLoading(false);
-        Alert.alert("Erro", "Credenciais inválidas");
+      if (!resultado.ok) {
+        Alert.alert("Erro", resultado.erro || "Falha ao fazer login");
+        return;
       }
-    } catch (error) {
+
+      const userId = resultado.data?.id;
+
+      if (!userId) {
+        Alert.alert("Erro", "Não foi possível obter ID do usuário");
+        return;
+      }
+
+      await AsyncStorage.setItem("userId", String(userId));
+
+      setEmail("");
+      setSenha("");
+
+      router.replace("/main/home");
+
+    } catch (error: any) {
+      Alert.alert("Erro", "Não foi possível conectar ao servidor");
+    } finally {
       setLoading(false);
-      Alert.alert("Erro", "Falha ao conectar ao servidor");
     }
   }
 
@@ -94,11 +109,37 @@ export default function Login() {
 }
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: "#F5F9FF" },
-  container: { flex: 1, justifyContent: "center", padding: 20, backgroundColor: "#F5F9FF" },
-  titulo: { fontSize: 26, fontWeight: "bold", color: "#1565C0", textAlign: "center", marginBottom: 20 },
-  input: { marginBottom: 14, backgroundColor: "#FFFFFF" },
-  botao: { marginTop: 10, paddingVertical: 5 },
-  texto: { marginTop: 16, textAlign: "center" },
-  link: { color: "#1565C0", fontWeight: "bold" },
+  safeArea: {
+    flex: 1,
+    backgroundColor: "#F5F9FF",
+  },
+  container: {
+    flex: 1,
+    justifyContent: "center",
+    padding: 20,
+    backgroundColor: "#F5F9FF",
+  },
+  titulo: {
+    fontSize: 26,
+    fontWeight: "bold",
+    color: "#1565C0",
+    textAlign: "center",
+    marginBottom: 20,
+  },
+  input: {
+    marginBottom: 14,
+    backgroundColor: "#FFFFFF",
+  },
+  botao: {
+    marginTop: 10,
+    paddingVertical: 5,
+  },
+  texto: {
+    marginTop: 16,
+    textAlign: "center",
+  },
+  link: {
+    color: "#1565C0",
+    fontWeight: "bold",
+  },
 });

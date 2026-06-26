@@ -3,6 +3,8 @@ interface CadastrarResponse {
   nome: string;
   email: string;
   telefone: string;
+  createdAt: string;
+  updatedAt: string;
 }
 
 interface CadastrarResult {

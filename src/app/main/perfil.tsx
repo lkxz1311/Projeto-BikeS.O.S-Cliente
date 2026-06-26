@@ -26,9 +26,9 @@ export default function Perfil() {
       const id = await AsyncStorage.getItem("userId");
       if (!id) return sair();
 
-      const response = await fetch(`http://10.0.2.2:3333/usuarios/${id}`);
+      const response = await fetch(`${process.env.EXPO_PUBLIC_API_URL}/usuarios/${id}`);
       const data = await response.json();
-      
+
       setNome(data.nome);
       setEmail(data.email);
       setTelefone(data.telefone);
@@ -42,7 +42,7 @@ export default function Perfil() {
   async function salvarDados() {
     try {
       const id = await AsyncStorage.getItem("userId");
-      const response = await fetch(`http://10.0.2.2:3333/usuarios/${id}`, {
+      const response = await fetch(`${process.env.EXPO_PUBLIC_API_URL}/usuarios/${id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ nome, telefone }),
@@ -78,8 +78,8 @@ export default function Perfil() {
     if (!resultado.canceled) setFoto(resultado.assets[0].uri);
   }
 
-  function sair() {
-    AsyncStorage.removeItem("userId");
+  async function sair() {
+    await AsyncStorage.removeItem("userId"); // ✅ await adicionado
     router.replace("/auth/login");
   }
 
@@ -108,8 +108,8 @@ export default function Perfil() {
           <Card.Content>
             {editando ? (
               <>
-                <TextInput label="Nome" mode="outlined" value={nome} onChangeText={setNome} style={styles.input} />
-                <TextInput label="Telefone" mode="outlined" value={telefone} onChangeText={(t) => setTelefone(formatarTelefone(t))} keyboardType="phone-pad" style={styles.input} />
+                <TextInput label="Nome" mode="outlined" value={nome} onChangeText={setNome} style={styles.input} activeOutlineColor="#1565C0" />
+                <TextInput label="Telefone" mode="outlined" value={telefone} onChangeText={(t) => setTelefone(formatarTelefone(t))} keyboardType="phone-pad" style={styles.input} activeOutlineColor="#1565C0" />
                 <Button mode="contained" buttonColor="#1565C0" style={styles.botaoSalvar} onPress={salvarDados}>Salvar alterações</Button>
               </>
             ) : (
@@ -121,7 +121,7 @@ export default function Perfil() {
             )}
           </Card.Content>
         </Card>
-        
+
         {erro !== "" && <View style={styles.erroBox}><Text style={styles.erroTexto}>{erro}</Text></View>}
 
         <Button mode="outlined" textColor="#1565C0" style={styles.botaoSair} icon="logout" onPress={sair}>Sair da conta</Button>
