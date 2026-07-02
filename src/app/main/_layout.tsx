@@ -1,17 +1,72 @@
 import { Tabs, router } from "expo-router";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import { TouchableOpacity, View, StyleSheet } from "react-native";
+import { View, StyleSheet, Pressable, Alert } from "react-native";
+import { useState } from "react";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 function BotaoSOS() {
+  const [loading, setLoading] = useState(false);
+
+  function darCliqueRapido() {
+    router.push("/main/solicitar");
+  }
+
+  async function segurarCliqueLongo() {
+    if (loading) return;
+    
+    setLoading(true);
+    try {
+      const userId = await AsyncStorage.getItem("userId");
+      if (!userId) {
+        Alert.alert("Erro", "Usuário não encontrado.");
+        return;
+      }
+
+      const response = await fetch(`${process.env.EXPO_PUBLIC_API_URL}/pedidos`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          tipo: "sos",
+          userId,
+          telefone: "Urgente",
+          problema: "Solicitação prioritária via botão SOS",
+          bike: "Não informada",
+          localizacao: "Localização atual",
+          pagamento: "Emergência",
+        }),
+      });
+
+      if (response.ok) {
+        Alert.alert("SOS Enviado!", "Os técnicos foram notificados imediatamente!", [
+          { text: "OK", onPress: () => router.replace("/main/home") }
+        ]);
+      } else {
+        Alert.alert("Erro", "Falha ao enviar o sinal de SOS.");
+      }
+    } catch (error) {
+      Alert.alert("Erro", "Não foi possível conectar ao servidor.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
   return (
-    <TouchableOpacity
+    <Pressable
+      onPress={darCliqueRapido}
+      onLongPress={segurarCliqueLongo}
+      delayLongPress={2500}
       style={styles.botaoSOS}
-      onPress={() => router.push("/main/solicitar?sos=true")}
+      disabled={loading}
     >
-      <View style={styles.botaoSOSInner}>
-        <MaterialCommunityIcons name="alarm-light" size={28} color="#FFFFFF" />
-      </View>
-    </TouchableOpacity>
+      {({ pressed }) => (
+        <View style={[
+          styles.botaoSOSInner, 
+          (pressed || loading) && styles.botaoSOSPressionado
+        ]}>
+          <MaterialCommunityIcons name="alarm-light" size={28} color="#FFFFFF" />
+        </View>
+      )}
+    </Pressable>
   );
 }
 
@@ -79,5 +134,9 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.5,
     shadowRadius: 8,
     elevation: 8,
+  },
+  botaoSOSPressionado: {
+    backgroundColor: "#9A0007",
+    transform: [{ scale: 0.95 }],
   },
 });

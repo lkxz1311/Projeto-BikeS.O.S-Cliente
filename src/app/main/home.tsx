@@ -49,12 +49,10 @@ export default function Home() {
       const usuario = await resUsuario.json();
       setNomeUsuario(usuario.nome?.split(" ")[0] || "");
 
-      // Busca pedidos
       const resultado = await listarPedidosService(userId);
       if (resultado.ok && resultado.data) {
         setPedidos(resultado.data);
 
-        // Se tiver pedido finalizado sem avaliação, abre modal
         const finalizado = resultado.data.find(p => p.status === "Finalizado");
         if (finalizado) {
           setPedidoParaAvaliar(finalizado);
@@ -68,7 +66,6 @@ export default function Home() {
     }
 
     try {
-      // Busca técnicos reais do banco
       const resTecnicos = await fetch(`${process.env.EXPO_PUBLIC_API_URL}/usuarios/tecnicos`);
       const data = await resTecnicos.json();
       setTecnicos(Array.isArray(data) ? data : []);
@@ -111,9 +108,6 @@ export default function Home() {
   }
 
   function statusVisivel(tipo: string, status: string): boolean {
-    // Para SOS: mostra SOS enviado, Técnico aceitou, Em andamento, Finalizado
-    // Para agendado: mostra Agendamento enviado, Técnico aceitou, Em andamento, Finalizado
-    // Para normal: mostra Aguardando técnico, Técnico aceitou, Em andamento, Finalizado
     const statusPermitidos = [
       "SOS enviado",
       "Aguardando técnico aceitar",
