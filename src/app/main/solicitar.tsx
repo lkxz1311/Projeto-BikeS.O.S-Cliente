@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { ScrollView, StyleSheet, View, Alert } from "react-native";
+import { ScrollView, StyleSheet, View, Alert, Platform } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Button, Card, RadioButton, Text, TextInput } from "react-native-paper";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
@@ -8,7 +8,11 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { criarPedidoService } from "../../../services/pedidoService";
 
 export default function Solicitar() {
-  const { sos } = useLocalSearchParams();
+  const params = useLocalSearchParams();
+  const { sos, tecnicoNome } = params;
+  
+  // Aceita tanto tecnicoSolicitadoId quanto tecnicoId
+  const tecnicoSolicitadoId = (params.tecnicoSolicitadoId || params.tecnicoId) as string | undefined;
 
   const [agendar, setAgendar] = useState(false);
   const [problema, setProblema] = useState("");
@@ -22,45 +26,14 @@ export default function Solicitar() {
   const [erro, setErro] = useState("");
   const [loading, setLoading] = useState(false);
 
+  /* 
+  // FUNCIONALIDADE SOS - OCULTA NO MVP
   useEffect(() => {
     if (sos === "true" && !sosJaCriado) {
       confirmarSOS();
       setSosJaCriado(true);
     }
   }, [sos, sosJaCriado]);
-
-  function formatarTelefone(valor: string) {
-    const numeros = valor.replace(/\D/g, "").slice(0, 11);
-    if (numeros.length <= 2) return `(${numeros}`;
-    if (numeros.length <= 7) return `(${numeros.slice(0, 2)}) ${numeros.slice(2)}`;
-    return `(${numeros.slice(0, 2)}) ${numeros.slice(2, 7)}-${numeros.slice(7, 11)}`;
-  }
-
-  function formatarData(valor: string) {
-    const numeros = valor.replace(/\D/g, "").slice(0, 8);
-    if (numeros.length <= 2) return numeros;
-    if (numeros.length <= 4) return `${numeros.slice(0, 2)}/${numeros.slice(2)}`;
-    return `${numeros.slice(0, 2)}/${numeros.slice(2, 4)}/${numeros.slice(4, 8)}`;
-  }
-
-  function formatarHorario(valor: string) {
-    const numeros = valor.replace(/\D/g, "").slice(0, 4);
-    if (numeros.length <= 2) return numeros;
-    return `${numeros.slice(0, 2)}:${numeros.slice(2, 4)}`;
-  }
-
-  function validarCamposBase() {
-    if (!problema || !bike || !localizacao || !telefone) {
-      setErro("Preencha os dados do atendimento.");
-      return false;
-    }
-    if (telefone.replace(/\D/g, "").length < 11) {
-      setErro("Digite o telefone com DDD e 9 dígitos.");
-      return false;
-    }
-    setErro("");
-    return true;
-  }
 
   async function confirmarSOS() {
     setLoading(true);
@@ -86,14 +59,54 @@ export default function Solicitar() {
         return;
       }
 
-      Alert.alert("SOS enviado!", "Técnicos foram notificados!", [
-        { text: "OK", onPress: () => router.replace("/main/home") },
-      ]);
+      if (Platform.OS === "web") {
+        alert("SOS enviado! Técnicos foram notificados!");
+        router.replace("/main/home");
+      } else {
+        Alert.alert("SOS enviado!", "Técnicos foram notificados!", [
+          { text: "OK", onPress: () => router.replace("/main/home") },
+        ]);
+        router.replace("/main/home");
+      }
     } catch (error) {
       Alert.alert("Erro", "Não foi possível enviar o SOS");
     } finally {
       setLoading(false);
     }
+  }
+  */
+
+  function formatarTelefone(valor: string) {
+    const numeros = valor.replace(/\D/g, "").slice(0, 11);
+    if (numeros.length <= 2) return `(${numeros}`;
+    if (numeros.length <= 7) return `(${numeros.slice(0, 2)}) ${numeros.slice(2)}`;
+    return `(${numeros.slice(0, 2)}) ${numeros.slice(2, 7)}-${numeros.slice(7, 11)}`;
+  }
+
+  function formatarData(valor: string) {
+    const numeros = valor.replace(/\D/g, "").slice(0, 8);
+    if (numeros.length <= 2) return numeros;
+    if (numeros.length <= 4) return `${numeros.slice(0, 2)}/${numeros.slice(2)}`;
+    return `${numeros.slice(0, 2)}/${numeros.slice(2, 4)}/${numeros.slice(4, 8)}`;
+  }
+
+  function formatarHorario(valor: string) {
+    const numeros = valor.replace(/\D/g, "").slice(0, 4);
+    if (numeros.length <= 2) return numeros;
+    return `${numeros.slice(0, 2)}:${numeros.slice(2, 4)}`;
+  }
+
+  function validarCamposBase() {
+    if (!problema || !bike || !localizacao || !telefone) {
+      setErro("Preencha todos os dados do atendimento.");
+      return false;
+    }
+    if (telefone.replace(/\D/g, "").length < 11) {
+      setErro("Digite o telefone com DDD e 9 dígitos.");
+      return false;
+    }
+    setErro("");
+    return true;
   }
 
   async function confirmarPedido() {
@@ -120,6 +133,7 @@ export default function Solicitar() {
         bike,
         localizacao,
         pagamento,
+        tecnicoSolicitadoId: tecnicoSolicitadoId || null,
       });
 
       if (!resultado.ok) {
@@ -127,6 +141,7 @@ export default function Solicitar() {
         return;
       }
 
+      // Reset dos campos
       setErro("");
       setProblema("");
       setBike("");
@@ -136,9 +151,16 @@ export default function Solicitar() {
       setHorarioAgendado("");
       setAgendar(false);
 
-      Alert.alert("Sucesso", "Pedido criado com sucesso!", [
-        { text: "OK", onPress: () => router.replace("/main/home") },
-      ]);
+      // Redirecionamento imune a travamentos
+      if (Platform.OS === "web") {
+        alert("Pedido criado com sucesso!");
+        router.replace("/main/home");
+      } else {
+        Alert.alert("Sucesso", "Pedido criado com sucesso!", [
+          { text: "OK", onPress: () => router.replace("/main/home") },
+        ]);
+        router.replace("/main/home");
+      }
     } catch (error) {
       Alert.alert("Erro", "Não foi possível criar o pedido");
     } finally {
@@ -159,6 +181,18 @@ export default function Solicitar() {
           </View>
         </View>
 
+        {/* ALERTA DE PEDIDO DIRETO PARA UM TÉCNICO */}
+        {tecnicoNome && (
+          <View style={styles.tecnicoDiretoBox}>
+            <MaterialCommunityIcons name="account-check-outline" size={24} color="#2E7D32" />
+            <Text style={styles.tecnicoDiretoTexto}>
+              Pedido direcionado para: <Text style={{ fontWeight: "bold" }}>{tecnicoNome}</Text>
+            </Text>
+          </View>
+        )}
+
+        {/* --- OPÇÃO DE AGENDAMENTO OCULTA NO MVP --- */}
+        {/* 
         <Card
           style={[styles.cardAgendarBotao, agendar && styles.cardAgendarAtivo]}
           onPress={() => setAgendar(!agendar)}
@@ -228,6 +262,7 @@ export default function Solicitar() {
             </Card.Content>
           </Card>
         )}
+        */}
 
         <Card style={styles.card}>
           <Card.Content>
@@ -261,12 +296,12 @@ export default function Solicitar() {
           mode="contained"
           buttonColor="#1565C0"
           style={styles.botaoConfirmar}
-          icon={agendar ? "calendar-check" : "send"}
+          icon="send"
           onPress={confirmarPedido}
           loading={loading}
           disabled={loading}
         >
-          {agendar ? "Confirmar agendamento" : "Confirmar solicitação"}
+          Confirmar solicitação
         </Button>
       </ScrollView>
     </SafeAreaView>
@@ -281,6 +316,8 @@ const styles = StyleSheet.create({
   titulo: { fontSize: 24, fontWeight: "bold", color: "#1E2A38" },
   subtitulo: { color: "#5F6B7A", marginTop: 3 },
   headerIcone: { width: 48, height: 48, borderRadius: 16, backgroundColor: "#E8F0FE", justifyContent: "center", alignItems: "center" },
+  tecnicoDiretoBox: { flexDirection: "row", alignItems: "center", backgroundColor: "#E8F5E9", padding: 12, borderRadius: 14, marginBottom: 14, gap: 10 },
+  tecnicoDiretoTexto: { color: "#2E7D32", fontSize: 14, flex: 1 },
   cardAgendarBotao: { backgroundColor: "#FFFFFF", borderRadius: 20, marginBottom: 14, borderWidth: 1, borderColor: "#E5E7EB" },
   cardAgendarAtivo: { backgroundColor: "#1565C0", borderColor: "#1565C0" },
   agendarBotaoContent: { flexDirection: "row", alignItems: "center" },

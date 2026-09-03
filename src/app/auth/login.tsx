@@ -24,6 +24,9 @@ export default function Login() {
 
     setLoading(true);
     try {
+
+      setLoading(false);
+      
       const resultado = await loginService({ email, senha });
 
       if (!resultado.ok) {
@@ -40,6 +43,8 @@ export default function Login() {
 
       await AsyncStorage.setItem("userId", String(userId));
 
+
+      
       setEmail("");
       setSenha("");
 

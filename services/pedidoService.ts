@@ -9,6 +9,7 @@ interface Pedido {
   pagamento: string;
   status: string;
   userId: string;
+  tecnicoSolicitadoId?: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -33,6 +34,7 @@ interface CriarPedidoDTO {
   bike: string;
   localizacao: string;
   pagamento: string;
+  tecnicoSolicitadoId?: string | null;
 }
 
 export async function criarPedidoService(dados: CriarPedidoDTO): Promise<PedidoResult> {

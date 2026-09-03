@@ -1,6 +1,6 @@
 import { router } from "expo-router";
 import { useState } from "react";
-import { StyleSheet, View, Alert } from "react-native";
+import { StyleSheet, View, Alert, Platform } from "react-native";
 import { Button, Text, TextInput, ActivityIndicator } from "react-native-paper";
 import { SafeAreaView } from "react-native-safe-area-context";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -51,19 +51,31 @@ export default function Cadastro() {
         return;
       }
 
+      // Salva o ID no AsyncStorage
       await AsyncStorage.setItem("userId", String(userId));
 
+      // Limpa os estados do formulário
       setNome("");
       setEmail("");
       setTelefone("");
       setSenha("");
 
-      Alert.alert("Sucesso", "Conta criada com sucesso!", [
-        {
-          text: "OK",
-          onPress: () => router.replace("/main/home"), // ✅ replace para não voltar ao cadastro
-        },
-      ]);
+      // NAVEGAÇÃO GARANTIDA:
+      if (Platform.OS === "web") {
+        // Na web, redireciona direto sem depender do callback do Alert
+        alert("Conta criada com sucesso!");
+        router.replace("/main/home");
+      } else {
+        // No celular (iOS/Android), exibe o Alert e redireciona em seguida
+        Alert.alert("Sucesso", "Conta criada com sucesso!", [
+          {
+            text: "OK",
+            onPress: () => router.replace("/main/home"),
+          },
+        ]);
+        // Fallback caso o usuário feche o alert sem clicar no OK
+        router.replace("/main/home");
+      }
 
     } catch (error) {
       Alert.alert("Erro", "Não foi possível conectar ao servidor");
