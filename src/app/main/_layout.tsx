@@ -96,6 +96,15 @@ export default function MainLayout() {
         }}
       />
       <Tabs.Screen
+        name="mapa"
+        options={{
+          title: "Mapa",
+          tabBarIcon: ({ color, size }) => (
+            <MaterialCommunityIcons name="map-marker-radius" color={color} size={size} />
+          ),
+        }}
+      />
+      <Tabs.Screen
         name="solicitar"
         options={{
           title: "SOS",
