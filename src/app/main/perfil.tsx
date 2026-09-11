@@ -1,5 +1,5 @@
-import { useState, useEffect } from "react";
-import { Image, StyleSheet, View } from "react-native";
+import { useState, useEffect, useCallback } from "react";
+import { Image, StyleSheet, View, ScrollView, RefreshControl } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Avatar, Button, Card, IconButton, Text, TextInput, ActivityIndicator } from "react-native-paper";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
@@ -10,6 +10,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 export default function Perfil() {
   const [editando, setEditando] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [erro, setErro] = useState("");
 
   const [nome, setNome] = useState("");
@@ -38,6 +39,13 @@ export default function Perfil() {
       setLoading(false);
     }
   }
+
+  // Função disparada ao puxar a tela para baixo
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await carregarPerfil();
+    setRefreshing(false);
+  }, []);
 
   async function salvarDados() {
     try {
@@ -79,7 +87,7 @@ export default function Perfil() {
   }
 
   async function sair() {
-    await AsyncStorage.removeItem("userId"); // ✅ await adicionado
+    await AsyncStorage.removeItem("userId");
     router.replace("/auth/login");
   }
 
@@ -87,7 +95,18 @@ export default function Perfil() {
 
   return (
     <SafeAreaView style={styles.safeArea} edges={["top"]}>
-      <View style={styles.container}>
+      <ScrollView
+        style={styles.container}
+        contentContainerStyle={styles.content}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            colors={["#1565C0"]}
+            tintColor="#1565C0"
+          />
+        }
+      >
         <View style={styles.header}>
           <View style={styles.fotoArea}>
             {foto ? (
@@ -125,7 +144,7 @@ export default function Perfil() {
         {erro !== "" && <View style={styles.erroBox}><Text style={styles.erroTexto}>{erro}</Text></View>}
 
         <Button mode="outlined" textColor="#1565C0" style={styles.botaoSair} icon="logout" onPress={sair}>Sair da conta</Button>
-      </View>
+      </ScrollView>
     </SafeAreaView>
   );
 }
@@ -138,7 +157,10 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: "#F5F9FF",
+  },
+  content: {
     padding: 16,
+    paddingBottom: 32,
   },
   header: {
     alignItems: "center",

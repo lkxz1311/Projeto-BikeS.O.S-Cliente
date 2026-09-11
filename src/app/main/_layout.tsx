@@ -98,6 +98,7 @@ export default function MainLayout() {
       <Tabs.Screen
         name="mapa"
         options={{
+          href: null,
           title: "Mapa",
           tabBarIcon: ({ color, size }) => (
             <MaterialCommunityIcons name="map-marker-radius" color={color} size={size} />

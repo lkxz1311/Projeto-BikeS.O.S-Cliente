@@ -1,13 +1,24 @@
-import { Component, type ReactNode, useCallback, useEffect, useRef, useState } from "react";
+import { Component, useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import {
-  Alert, Animated, Linking, Platform, Pressable, StyleSheet, TouchableOpacity, View,
+  Alert,
+  Animated,
+  FlatList,
+  Linking,
+  Modal,
+  Platform,
+  Pressable,
+  StyleSheet,
+  TouchableOpacity,
+  View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { Text } from "react-native-paper";
-import { MaterialCommunityIcons } from "@expo/vector-icons";
-import MapView, { Marker, PROVIDER_GOOGLE } from "react-native-maps";
-import * as Location from "expo-location";
 
+import { MaterialCommunityIcons } from "@expo/vector-icons";
+import * as Location from "expo-location";
+import MapView, { Marker, PROVIDER_GOOGLE } from "react-native-maps";
+import { Text } from "react-native-paper";
+
+import cleanMapStyle from "../../constants/mapStyle.json";
 import {
   CATEGORY_META,
   JARDIM_REGION,
@@ -17,13 +28,13 @@ import {
 
 export default function Mapa() {
   const mapRef = useRef<MapView>(null);
-  const fadeAnim = useRef(new Animated.Value(1)).current;
+  const modalMapRef = useRef<MapView>(null);
+  const fadeAnim = useRef(new Animated.Value(0)).current;
 
   const [selecionado, setSelecionado] = useState<PointOfInterest | null>(null);
   const [permissao, setPermissao] = useState<Location.PermissionResponse | null>(null);
+  const [expandido, setExpandido] = useState(false);
 
-  // Pede a permissao uma vez ao montar. Sem isso, ligar "minha localizacao" no
-  // mapa dispara SecurityException no Android (ACCESS_FINE/COARSE_LOCATION).
   useEffect(() => {
     let ativo = true;
 
@@ -37,9 +48,7 @@ export default function Mapa() {
       } else {
         setPermissao(atual);
       }
-    })().catch(() => {
-      /* usuario pode negar — seguimos sem "minha localizacao" */
-    });
+    })().catch(() => {});
 
     return () => {
       ativo = false;
@@ -47,12 +56,9 @@ export default function Mapa() {
   }, []);
 
   const temPermissao = !!permissao?.granted;
-  // So avisamos depois que o status carregou e a permissao nao foi concedida.
   const mostrarAvisoLocalizacao = !!permissao && !permissao.granted;
 
   const pedirLocalizacao = useCallback(async () => {
-    // Ainda da pra pedir no app? Reabre o prompt nativo. Senao, manda as
-    // configuracoes do sistema (usuario ja negou "para sempre").
     if (permissao?.canAskAgain) {
       const pedida = await Location.requestForegroundPermissionsAsync().catch(() => null);
       if (pedida) setPermissao(pedida);
@@ -76,14 +82,37 @@ export default function Mapa() {
         {
           latitude: poi.latitude,
           longitude: poi.longitude,
-          latitudeDelta: 0.01,
-          longitudeDelta: 0.01,
+          latitudeDelta: 0.008,
+          longitudeDelta: 0.008,
         },
         450,
       );
     },
     [fadeAnim],
   );
+
+  const selecionarPontoNoModal = useCallback((poi: PointOfInterest) => {
+    setSelecionado(poi);
+    modalMapRef.current?.animateToRegion(
+      {
+        latitude: poi.latitude,
+        longitude: poi.longitude,
+        latitudeDelta: 0.008,
+        longitudeDelta: 0.008,
+      },
+      450,
+    );
+  }, []);
+
+  const fecharDetalhes = useCallback(() => {
+    Animated.timing(fadeAnim, {
+      toValue: 0,
+      duration: 180,
+      useNativeDriver: true,
+    }).start(() => {
+      setSelecionado(null);
+    });
+  }, [fadeAnim]);
 
   const ligar = useCallback(async (telefone: string) => {
     const numero = telefone.replace(/[^0-9+]/g, "");
@@ -96,19 +125,14 @@ export default function Mapa() {
 
   const comoChegar = useCallback(async (poi: PointOfInterest) => {
     const coords = `${poi.latitude},${poi.longitude}`;
-    // URLs de direcao (nao de busca): omitir a origem faz o app de mapas usar a
-    // localizacao atual do usuario como ponto de partida automaticamente.
     const url = Platform.select({
-      // Apple Maps: daddr = destino, saddr ausente = "minha localizacao", dirflg=d (dirigindo).
       ios: `maps://?daddr=${coords}&dirflg=d`,
-      // Google Maps (Android): navegacao a partir da localizacao atual.
       android: `google.navigation:q=${coords}`,
     });
 
     try {
       await Linking.openURL(url!);
     } catch {
-      // Fallback web: directions com destino; origem padrao = localizacao atual.
       await Linking.openURL(`https://www.google.com/maps/dir/?api=1&destination=${coords}`);
     }
   }, []);
@@ -122,8 +146,9 @@ export default function Mapa() {
           provider={Platform.OS === "android" ? PROVIDER_GOOGLE : undefined}
           initialRegion={JARDIM_REGION}
           showsUserLocation={temPermissao}
-          showsMyLocationButton={temPermissao}
+          showsMyLocationButton={false}
           toolbarEnabled={false}
+          customMapStyle={cleanMapStyle}
         >
           {POINTS_OF_INTEREST.map((poi) => (
             <Marker
@@ -131,8 +156,8 @@ export default function Mapa() {
               identifier={poi.id}
               coordinate={{ latitude: poi.latitude, longitude: poi.longitude }}
               title={poi.name}
-              description={CATEGORY_META[poi.category].label}
-              pinColor={CATEGORY_META[poi.category].color}
+              description={CATEGORY_META[poi.category]?.label ?? "Técnico"}
+              pinColor={CATEGORY_META[poi.category]?.color ?? "#1565C0"}
               onPress={() => selecionarPonto(poi)}
             />
           ))}
@@ -140,9 +165,19 @@ export default function Mapa() {
       </MapaErrorBoundary>
 
       <SafeAreaView style={styles.topo} edges={["top"]} pointerEvents="box-none">
-        <View style={styles.tituloBox}>
-          <MaterialCommunityIcons name="map-marker-radius" size={22} color="#1565C0" />
-          <Text style={styles.tituloTexto}>Pontos de apoio</Text>
+        <View style={styles.topoLinha}>
+          <View style={styles.tituloBox}>
+            <MaterialCommunityIcons name="account-wrench" size={18} color="#1565C0" />
+            <Text style={styles.tituloTexto}>Técnicos da Região</Text>
+          </View>
+
+          <TouchableOpacity
+            style={styles.botaoExpandir}
+            onPress={() => setExpandido(true)}
+            activeOpacity={0.8}
+          >
+            <MaterialCommunityIcons name="fullscreen" size={20} color="#1565C0" />
+          </TouchableOpacity>
         </View>
 
         {mostrarAvisoLocalizacao && (
@@ -153,24 +188,90 @@ export default function Mapa() {
         )}
       </SafeAreaView>
 
-      <Animated.View style={[styles.painel, { opacity: fadeAnim }]}>
-        <View style={styles.painelAlca} />
-        {selecionado ? (
+      {selecionado && !expandido && (
+        <Animated.View style={[styles.painelFlutuante, { opacity: fadeAnim }]}>
           <DetalhesPonto
             poi={selecionado}
-            onFechar={() => setSelecionado(null)}
+            onFechar={fecharDetalhes}
             onLigar={ligar}
             onComoChegar={comoChegar}
           />
-        ) : (
-          <DicaVazia />
-        )}
-      </Animated.View>
+        </Animated.View>
+      )}
+
+      {/* MODAL EXPANDIDO COM MAPA E LISTA */}
+      <Modal visible={expandido} animationType="slide" onRequestClose={() => setExpandido(false)}>
+        <SafeAreaView style={styles.modalContainer}>
+          <View style={styles.modalHeader}>
+            <TouchableOpacity style={styles.modalBotaoFechar} onPress={() => setExpandido(false)}>
+              <MaterialCommunityIcons name="close" size={24} color="#1E2A38" />
+            </TouchableOpacity>
+            <Text style={styles.modalTitulo}>Técnicos na Região</Text>
+          </View>
+
+          {/* PARTE SUPERIOR: MAPA NO MODAL */}
+          <View style={styles.modalMapaBox}>
+            <MapView
+              ref={modalMapRef}
+              style={StyleSheet.absoluteFillObject}
+              provider={Platform.OS === "android" ? PROVIDER_GOOGLE : undefined}
+              initialRegion={JARDIM_REGION}
+              showsUserLocation={temPermissao}
+              customMapStyle={cleanMapStyle}
+            >
+              {POINTS_OF_INTEREST.map((poi) => (
+                <Marker
+                  key={poi.id}
+                  coordinate={{ latitude: poi.latitude, longitude: poi.longitude }}
+                  title={poi.name}
+                  pinColor={CATEGORY_META[poi.category]?.color ?? "#1565C0"}
+                  onPress={() => selecionarPontoNoModal(poi)}
+                />
+              ))}
+            </MapView>
+          </View>
+
+          {/* PARTE INFERIOR: LISTA DE TÉCNICOS */}
+          <View style={styles.listaContainer}>
+            <Text style={styles.listaTitulo}>Técnicos Disponíveis</Text>
+            <FlatList
+              data={POINTS_OF_INTEREST}
+              keyExtractor={(item) => item.id}
+              showsVerticalScrollIndicator={false}
+              renderItem={({ item }) => (
+                <TouchableOpacity
+                  style={styles.tecnicoCard}
+                  activeOpacity={0.7}
+                  onPress={() => selecionarPontoNoModal(item)}
+                >
+                  <View style={styles.tecnicoIcone}>
+                    <MaterialCommunityIcons name="wrench" size={20} color="#1565C0" />
+                  </View>
+                  <View style={styles.tecnicoInfo}>
+                    <Text style={styles.tecnicoNome}>{item.name}</Text>
+                    <Text style={styles.tecnicoEndereco}>{item.address}</Text>
+                    {item.hours && <Text style={styles.tecnicoHorario}>🕒 {item.hours}</Text>}
+                  </View>
+                  {item.phone && (
+                    <TouchableOpacity
+                      style={styles.tecnicoBotaoLigar}
+                      onPress={(e) => {
+                        e.stopPropagation();
+                        ligar(item.phone!);
+                      }}
+                    >
+                      <MaterialCommunityIcons name="phone" size={18} color="#FFFFFF" />
+                    </TouchableOpacity>
+                  )}
+                </TouchableOpacity>
+              )}
+            />
+          </View>
+        </SafeAreaView>
+      </Modal>
     </View>
   );
 }
-
-/* --------------------------- componentes --------------------------- */
 
 class MapaErrorBoundary extends Component<{ children: ReactNode }, { erro: boolean }> {
   state = { erro: false };
@@ -185,9 +286,7 @@ class MapaErrorBoundary extends Component<{ children: ReactNode }, { erro: boole
 
   render() {
     if (this.state.erro) {
-      return (
-        <MapaIndisponivel message="Não foi possível carregar o mapa agora. Você ainda pode ver o ponto de apoio abaixo." />
-      );
+      return <MapaIndisponivel message="Não foi possível carregar o mapa agora." />;
     }
     return <>{this.props.children}</>;
   }
@@ -214,25 +313,14 @@ function AvisoLocalizacao({
       onPress={onPress}
       style={({ pressed }) => [styles.aviso, pressed && styles.pressionado]}
     >
-      <MaterialCommunityIcons name="crosshairs-gps" size={20} color="#1565C0" />
-      <Text style={styles.avisoTexto}>
+      <MaterialCommunityIcons name="crosshairs-gps" size={18} color="#1565C0" />
+      <Text style={styles.avisoTexto} numberOfLines={1}>
         {podePerguntar
-          ? "Ative a localização para ver sua posição no mapa."
-          : "Localização desativada. Toque para ativar nas configurações."}
+          ? "Ative a localização para ver sua posição."
+          : "GPS desativado. Toque para configurar."}
       </Text>
       <Text style={styles.avisoCta}>{podePerguntar ? "Permitir" : "Abrir"}</Text>
     </Pressable>
-  );
-}
-
-function DicaVazia() {
-  return (
-    <View style={styles.dicaVazia}>
-      <MaterialCommunityIcons name="map-marker" size={32} color="#1565C0" />
-      <Text style={styles.dicaTitulo}>
-        Toque no marcador do mapa para ver telefone, endereço e horário de atendimento.
-      </Text>
-    </View>
   );
 }
 
@@ -247,7 +335,7 @@ function DetalhesPonto({
   onLigar: (telefone: string) => void;
   onComoChegar: (poi: PointOfInterest) => void;
 }) {
-  const meta = CATEGORY_META[poi.category];
+  const meta = CATEGORY_META[poi.category] ?? { label: "TÉCNICO", color: "#1565C0" };
 
   return (
     <View style={styles.detalhes}>
@@ -259,22 +347,30 @@ function DetalhesPonto({
           </Text>
         </View>
         <TouchableOpacity onPress={onFechar} hitSlop={10}>
-          <MaterialCommunityIcons name="close" size={22} color="#6B7280" />
+          <MaterialCommunityIcons name="close" size={20} color="#6B7280" />
         </TouchableOpacity>
       </View>
 
-      <Text style={styles.nome}>{poi.name}</Text>
-      <Text style={styles.descricao}>{poi.description}</Text>
+      <Text style={styles.nome} numberOfLines={1}>
+        {poi.name}
+      </Text>
+      <Text style={styles.descricao} numberOfLines={2}>
+        {poi.description}
+      </Text>
 
       <View style={styles.infoLinha}>
-        <MaterialCommunityIcons name="map-marker-outline" size={18} color="#1565C0" />
-        <Text style={styles.infoTexto}>{poi.address}</Text>
+        <MaterialCommunityIcons name="map-marker-outline" size={16} color="#1565C0" />
+        <Text style={styles.infoTexto} numberOfLines={1}>
+          {poi.address}
+        </Text>
       </View>
 
       {poi.hours && (
         <View style={styles.infoLinha}>
-          <MaterialCommunityIcons name="clock-outline" size={18} color="#1565C0" />
-          <Text style={styles.infoTexto}>{poi.hours}</Text>
+          <MaterialCommunityIcons name="clock-outline" size={16} color="#1565C0" />
+          <Text style={styles.infoTexto} numberOfLines={1}>
+            {poi.hours}
+          </Text>
         </View>
       )}
 
@@ -284,7 +380,7 @@ function DetalhesPonto({
             onPress={() => onLigar(poi.phone!)}
             style={({ pressed }) => [styles.botao, pressed && styles.pressionado]}
           >
-            <MaterialCommunityIcons name="phone" size={18} color="#FFFFFF" />
+            <MaterialCommunityIcons name="phone" size={16} color="#FFFFFF" />
             <Text style={styles.botaoTexto}>Ligar</Text>
           </Pressable>
         )}
@@ -297,7 +393,7 @@ function DetalhesPonto({
             pressed && styles.pressionado,
           ]}
         >
-          <MaterialCommunityIcons name="navigation-variant" size={18} color="#1565C0" />
+          <MaterialCommunityIcons name="navigation-variant" size={16} color="#1565C0" />
           <Text style={[styles.botaoTexto, styles.botaoTextoSecundario]}>Como chegar</Text>
         </Pressable>
       </View>
@@ -308,69 +404,168 @@ function DetalhesPonto({
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#F5F9FF" },
 
-  topo: { position: "absolute", top: 0, left: 0, right: 0 },
-  tituloBox: {
-    flexDirection: "row", alignItems: "center", gap: 8, alignSelf: "flex-start",
-    marginTop: 10, marginLeft: 16,
-    paddingVertical: 10, paddingHorizontal: 14,
-    borderRadius: 999, backgroundColor: "#FFFFFF",
-    shadowColor: "#000", shadowOpacity: 0.12, shadowRadius: 8,
-    shadowOffset: { width: 0, height: 2 }, elevation: 4,
+  topo: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    paddingHorizontal: 12,
+    paddingTop: 8,
   },
-  tituloTexto: { fontSize: 15, fontWeight: "bold", color: "#1E2A38" },
+  topoLinha: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  tituloBox: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 999,
+    backgroundColor: "#FFFFFF",
+    shadowColor: "#000",
+    shadowOpacity: 0.12,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 3,
+  },
+  tituloTexto: { fontSize: 13, fontWeight: "bold", color: "#1E2A38" },
+
+  botaoExpandir: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: "#FFFFFF",
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: "#000",
+    shadowOpacity: 0.12,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 3,
+  },
 
   aviso: {
-    flexDirection: "row", alignItems: "center", gap: 10,
-    marginHorizontal: 16, marginTop: 10,
-    paddingVertical: 10, paddingHorizontal: 14,
-    borderRadius: 16, backgroundColor: "#FFFFFF",
-    shadowColor: "#000", shadowOpacity: 0.12, shadowRadius: 8,
-    shadowOffset: { width: 0, height: 2 }, elevation: 4,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginTop: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    backgroundColor: "#FFFFFF",
+    shadowColor: "#000",
+    shadowOpacity: 0.12,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 3,
   },
-  avisoTexto: { flex: 1, fontSize: 13, color: "#374151", lineHeight: 18 },
-  avisoCta: { fontSize: 13, fontWeight: "bold", color: "#1565C0" },
+  avisoTexto: { flex: 1, fontSize: 12, color: "#374151" },
+  avisoCta: { fontSize: 12, fontWeight: "bold", color: "#1565C0" },
 
   indisponivel: {
-    alignItems: "center", justifyContent: "center", gap: 12,
-    paddingHorizontal: 32, backgroundColor: "#F5F9FF",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 12,
+    paddingHorizontal: 32,
+    backgroundColor: "#F5F9FF",
   },
   indisponivelTexto: { fontSize: 14, color: "#5F6B7A", textAlign: "center", lineHeight: 20 },
 
-  painel: {
-    position: "absolute", bottom: 0, left: 0, right: 0,
+  painelFlutuante: {
+    position: "absolute",
+    bottom: 12,
+    left: 12,
+    right: 12,
     backgroundColor: "#FFFFFF",
-    borderTopLeftRadius: 28, borderTopRightRadius: 28,
-    paddingHorizontal: 20, paddingTop: 12, paddingBottom: 28,
-    shadowColor: "#000", shadowOpacity: 0.15, shadowRadius: 20,
-    shadowOffset: { width: 0, height: -4 }, elevation: 12,
-  },
-  painelAlca: {
-    width: 40, height: 4, borderRadius: 2, backgroundColor: "#E5E7EB",
-    alignSelf: "center", marginBottom: 14,
+    borderRadius: 20,
+    padding: 14,
+    shadowColor: "#000",
+    shadowOpacity: 0.18,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 8,
   },
 
-  dicaVazia: { alignItems: "center", gap: 10, paddingVertical: 6 },
-  dicaTitulo: { fontSize: 14, color: "#5F6B7A", textAlign: "center", lineHeight: 20 },
-
-  detalhes: { gap: 8 },
+  detalhes: { gap: 6 },
   detalhesTopo: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
-  categoriaLinha: { flexDirection: "row", alignItems: "center", gap: 8 },
-  categoriaBolinha: { width: 10, height: 10, borderRadius: 5 },
-  categoriaLabel: { fontSize: 11, fontWeight: "bold", letterSpacing: 1 },
+  categoriaLinha: { flexDirection: "row", alignItems: "center", gap: 6 },
+  categoriaBolinha: { width: 8, height: 8, borderRadius: 4 },
+  categoriaLabel: { fontSize: 10, fontWeight: "bold", letterSpacing: 0.8 },
 
-  nome: { fontSize: 18, fontWeight: "bold", color: "#1E2A38" },
-  descricao: { fontSize: 14, color: "#374151", lineHeight: 20 },
+  nome: { fontSize: 16, fontWeight: "bold", color: "#1E2A38" },
+  descricao: { fontSize: 13, color: "#374151", lineHeight: 18 },
 
-  infoLinha: { flexDirection: "row", alignItems: "flex-start", gap: 8, marginTop: 2 },
-  infoTexto: { flex: 1, fontSize: 13, color: "#374151", lineHeight: 19 },
+  infoLinha: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: 2 },
+  infoTexto: { flex: 1, fontSize: 12, color: "#374151" },
 
-  acoes: { flexDirection: "row", gap: 10, marginTop: 14 },
+  acoes: { flexDirection: "row", gap: 8, marginTop: 10 },
   botao: {
-    flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8,
-    paddingVertical: 13, borderRadius: 999, backgroundColor: "#1565C0",
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    paddingVertical: 10,
+    borderRadius: 999,
+    backgroundColor: "#1565C0",
   },
   botaoSecundario: { backgroundColor: "transparent", borderWidth: 1.5, borderColor: "#1565C0" },
-  botaoTexto: { color: "#FFFFFF", fontWeight: "bold", fontSize: 14 },
+  botaoTexto: { color: "#FFFFFF", fontWeight: "bold", fontSize: 13 },
   botaoTextoSecundario: { color: "#1565C0" },
   pressionado: { opacity: 0.75, transform: [{ scale: 0.98 }] },
+
+  /* ESTILOS DO MODAL EXPANDIDO */
+  modalContainer: { flex: 1, backgroundColor: "#F5F9FF" },
+  modalHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    gap: 12,
+    backgroundColor: "#FFFFFF",
+    borderBottomWidth: 1,
+    borderBottomColor: "#E5E7EB",
+  },
+  modalBotaoFechar: { padding: 4 },
+  modalTitulo: { fontSize: 16, fontWeight: "bold", color: "#1E2A38" },
+  modalMapaBox: { height: "40%", width: "100%" },
+
+  listaContainer: { flex: 1, padding: 16 },
+  listaTitulo: { fontSize: 15, fontWeight: "bold", color: "#1E2A38", marginBottom: 12 },
+  tecnicoCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#FFFFFF",
+    padding: 12,
+    borderRadius: 14,
+    marginBottom: 10,
+    gap: 12,
+    elevation: 2,
+    shadowColor: "#000",
+    shadowOpacity: 0.08,
+    shadowRadius: 4,
+  },
+  tecnicoIcone: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: "#E8F0FE",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  tecnicoInfo: { flex: 1 },
+  tecnicoNome: { fontSize: 14, fontWeight: "bold", color: "#1E2A38" },
+  tecnicoEndereco: { fontSize: 12, color: "#6B7280", marginTop: 2 },
+  tecnicoHorario: { fontSize: 11, color: "#1565C0", marginTop: 2 },
+  tecnicoBotaoLigar: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: "#1565C0",
+    alignItems: "center",
+    justifyContent: "center",
+  },
 });

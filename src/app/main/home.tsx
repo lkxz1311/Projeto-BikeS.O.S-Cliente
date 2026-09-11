@@ -1,11 +1,12 @@
 import { useState, useCallback } from "react";
-import { ScrollView, StyleSheet, TouchableOpacity, View, Alert, Modal } from "react-native";
+import { ScrollView, StyleSheet, TouchableOpacity, View, Alert, Modal, RefreshControl } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { Avatar, Card, Chip, Divider, IconButton, Text, ActivityIndicator } from "react-native-paper";
+import { Avatar, Card, Chip, Divider, IconButton, Text, ActivityIndicator, TextInput } from "react-native-paper";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useFocusEffect, router } from "expo-router";
 import { listarPedidosService } from "../../../services/pedidoService";
+import Mapa from './mapa';
 
 type Pedido = {
   id: string;
@@ -14,6 +15,8 @@ type Pedido = {
   problema: string;
   status: string;
   createdAt: string;
+  avaliado?: boolean;
+  tecnicoId?: string;
 };
 
 type Tecnico = {
@@ -28,10 +31,15 @@ export default function Home() {
   const [tecnicos, setTecnicos] = useState<Tecnico[]>([]);
   const [loadingPedidos, setLoadingPedidos] = useState(true);
   const [loadingTecnicos, setLoadingTecnicos] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [nomeUsuario, setNomeUsuario] = useState("");
+  
+  // Estados do Modal de Avaliação
   const [modalAvaliacao, setModalAvaliacao] = useState(false);
   const [pedidoParaAvaliar, setPedidoParaAvaliar] = useState<Pedido | null>(null);
   const [avaliacao, setAvaliacao] = useState(0);
+  const [observacao, setObservacao] = useState("");
+  const [enviandoAvaliacao, setEnviandoAvaliacao] = useState(false);
 
   useFocusEffect(
     useCallback(() => {
@@ -44,7 +52,6 @@ export default function Home() {
       const userId = await AsyncStorage.getItem("userId");
       if (!userId) return;
 
-      // Busca nome do usuário
       const resUsuario = await fetch(`${process.env.EXPO_PUBLIC_API_URL}/usuarios/${userId}`);
       const usuario = await resUsuario.json();
       setNomeUsuario(usuario.nome?.split(" ")[0] || "");
@@ -53,9 +60,12 @@ export default function Home() {
       if (resultado.ok && resultado.data) {
         setPedidos(resultado.data);
 
-        const finalizado = resultado.data.find(p => p.status === "Finalizado");
-        if (finalizado) {
-          setPedidoParaAvaliar(finalizado);
+        // Exibe o modal apenas para pedidos Finalizados que NÃO foram avaliados
+        const pendenteAvaliacao = resultado.data.find(
+          (p: Pedido) => p.status === "Finalizado" && !p.avaliado
+        );
+        if (pendenteAvaliacao) {
+          setPedidoParaAvaliar(pendenteAvaliacao);
           setModalAvaliacao(true);
         }
       }
@@ -76,9 +86,55 @@ export default function Home() {
     }
   }
 
-  const pedidosAtivos = pedidos.filter(p =>
-    !["Finalizado", "Rejeitado"].includes(p.status)
-  ).length;
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await carregarDados();
+    setRefreshing(false);
+  }, []);
+
+  async function enviarAvaliacaoServico() {
+    if (avaliacao === 0 || !pedidoParaAvaliar) return;
+
+    setEnviandoAvaliacao(true);
+    try {
+      const userId = await AsyncStorage.getItem("userId");
+      const tecnicoIdFinal = pedidoParaAvaliar.tecnicoId || (pedidoParaAvaliar as any).idTecnico;
+
+      const payload = {
+        nota: avaliacao,
+        comentario: observacao,
+        clienteId: userId,
+        tecnicoId: tecnicoIdFinal,
+        pedidoId: pedidoParaAvaliar.id,
+      };
+
+      // Envia para a rota POST /avaliacoes definida no seu backend
+      const response = await fetch(`${process.env.EXPO_PUBLIC_API_URL}/avaliacoes`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      if (response.ok) {
+        Alert.alert("Obrigado!", "Sua avaliação foi enviada com sucesso!");
+        setModalAvaliacao(false);
+        setPedidoParaAvaliar(null);
+        setAvaliacao(0);
+        setObservacao("");
+        await carregarDados(); // Recarrega os pedidos para atualizar a flag `avaliado`
+      } else {
+        const errorData = await response.json().catch(() => ({}));
+        const mensagem = errorData.message || errorData.erro || "Erro ao salvar avaliação no servidor.";
+        Alert.alert("Erro", mensagem);
+      }
+    } catch (error) {
+      Alert.alert("Erro de Conexão", "Não foi possível conectar ao servidor.");
+    } finally {
+      setEnviandoAvaliacao(false);
+    }
+  }
+
+  const pedidosAtivos = pedidos.filter(p => !["Finalizado", "Rejeitado"].includes(p.status)).length;
   const pedidosConcluidos = pedidos.filter(p => p.status === "Finalizado").length;
 
   function formatarData(data: string) {
@@ -86,7 +142,6 @@ export default function Home() {
   }
 
   function textoStatus(tipo: string, status: string): string {
-    // Status simplificados para o cliente
     if (status === "Aguardando técnico aceitar") return "Aguardando técnico";
     if (status === "SOS enviado") return "SOS enviado";
     if (status === "Agendamento enviado") return "Agendamento enviado";
@@ -107,36 +162,30 @@ export default function Home() {
     return styles.chipNormal;
   }
 
-  function statusVisivel(tipo: string, status: string): boolean {
-    const statusPermitidos = [
-      "SOS enviado",
-      "Aguardando técnico aceitar",
-      "Agendamento enviado",
-      "Técnico aceitou",
-      "Técnico a caminho",
-      "Em atendimento",
-      "Finalizado",
-      "Rejeitado",
-    ];
-    return statusPermitidos.includes(status);
-  }
-
   return (
     <SafeAreaView style={styles.safeArea} edges={["top"]}>
-      <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-
+      <ScrollView
+        style={styles.container}
+        contentContainerStyle={styles.content}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={["#1565C0"]} tintColor="#1565C0" />
+        }
+      >
         {/* HEADER */}
         <View style={styles.header}>
           <View style={styles.headerEsquerda}>
             <Avatar.Icon size={52} icon="bike" color="#FFFFFF" style={styles.avatar} />
             <View>
               <Text style={styles.titulo}>Painel do Cliente</Text>
-              <Text style={styles.subtitulo}>
-                {nomeUsuario ? `Olá, ${nomeUsuario}! 👋` : "Olá! 👋"}
-              </Text>
+              <Text style={styles.subtitulo}>{nomeUsuario ? `Olá, ${nomeUsuario}! 👋` : "Olá! 👋"}</Text>
             </View>
           </View>
           <IconButton icon="bell-outline" iconColor="#1565C0" size={24} />
+        </View>
+
+        {/* MAPA */}
+        <View style={styles.mapaContainer}>
+          <Mapa />
         </View>
 
         {/* RESUMO */}
@@ -231,12 +280,13 @@ export default function Home() {
                 <Text style={styles.pedidoInfo}>Problema: {pedido.problema}</Text>
                 <Text style={styles.pedidoData}>Data: {formatarData(pedido.createdAt)}</Text>
 
-                {pedido.status === "Finalizado" && (
+                {pedido.status === "Finalizado" && !pedido.avaliado && (
                   <TouchableOpacity
                     style={styles.botaoAvaliar}
                     onPress={() => {
                       setPedidoParaAvaliar(pedido);
                       setAvaliacao(0);
+                      setObservacao("");
                       setModalAvaliacao(true);
                     }}
                   >
@@ -250,7 +300,7 @@ export default function Home() {
         )}
       </ScrollView>
 
-      {/* MODAL AVALIAÇÃO */}
+      {/* MODAL DE AVALIAÇÃO */}
       <Modal visible={modalAvaliacao} transparent animationType="fade">
         <View style={styles.modalOverlay}>
           <View style={styles.modalCard}>
@@ -270,17 +320,28 @@ export default function Home() {
               ))}
             </View>
 
+            <TextInput
+              label="Observações (opcional)"
+              mode="outlined"
+              value={observacao}
+              onChangeText={setObservacao}
+              multiline
+              numberOfLines={3}
+              style={styles.inputObservacao}
+              activeOutlineColor="#1565C0"
+              placeholder="Conte como foi a sua experiência..."
+            />
+
             <TouchableOpacity
-              style={[styles.botaoEnviarAvaliacao, avaliacao === 0 && styles.botaoDesabilitado]}
-              onPress={() => {
-                if (avaliacao === 0) return;
-                Alert.alert("Obrigado!", "Avaliação enviada com sucesso!");
-                setModalAvaliacao(false);
-                setPedidoParaAvaliar(null);
-                setAvaliacao(0);
-              }}
+              style={[styles.botaoEnviarAvaliacao, (avaliacao === 0 || enviandoAvaliacao) && styles.botaoDesabilitado]}
+              onPress={enviarAvaliacaoServico}
+              disabled={avaliacao === 0 || enviandoAvaliacao}
             >
-              <Text style={styles.botaoEnviarAvaliacaoTexto}>Enviar avaliação</Text>
+              {enviandoAvaliacao ? (
+                <ActivityIndicator color="#FFFFFF" size="small" />
+              ) : (
+                <Text style={styles.botaoEnviarAvaliacaoTexto}>Enviar avaliação</Text>
+              )}
             </TouchableOpacity>
 
             <TouchableOpacity onPress={() => setModalAvaliacao(false)}>
@@ -302,6 +363,7 @@ const styles = StyleSheet.create({
   avatar: { backgroundColor: "#1565C0", marginRight: 12 },
   titulo: { fontSize: 22, fontWeight: "bold", color: "#1E2A38" },
   subtitulo: { color: "#5F6B7A", marginTop: 2 },
+  mapaContainer: { height: 280, width: "100%", marginBottom: 16, borderRadius: 18, overflow: "hidden" },
   grid: { flexDirection: "row", gap: 12, marginBottom: 14 },
   cardResumo: { flex: 1, backgroundColor: "#FFFFFF", borderRadius: 18 },
   iconeBoxAzul: { width: 46, height: 46, borderRadius: 14, backgroundColor: "#E8F0FE", justifyContent: "center", alignItems: "center" },
@@ -340,11 +402,12 @@ const styles = StyleSheet.create({
   botaoAvaliar: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: 10, backgroundColor: "#FEF3C7", padding: 8, borderRadius: 8 },
   botaoAvaliarTexto: { color: "#D97706", fontWeight: "bold", fontSize: 13 },
   modalOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "center", alignItems: "center" },
-  modalCard: { backgroundColor: "#FFFFFF", borderRadius: 24, padding: 28, width: "85%", alignItems: "center" },
+  modalCard: { backgroundColor: "#FFFFFF", borderRadius: 24, padding: 24, width: "88%", alignItems: "center" },
   modalTitulo: { fontSize: 22, fontWeight: "bold", color: "#1E2A38", marginTop: 12, textAlign: "center" },
-  modalSubtitulo: { fontSize: 15, color: "#5F6B7A", marginTop: 6, marginBottom: 20, textAlign: "center" },
-  estrelas: { flexDirection: "row", gap: 8, marginBottom: 24 },
-  botaoEnviarAvaliacao: { backgroundColor: "#1565C0", borderRadius: 12, paddingVertical: 12, paddingHorizontal: 32, width: "100%", alignItems: "center" },
+  modalSubtitulo: { fontSize: 15, color: "#5F6B7A", marginTop: 4, marginBottom: 16, textAlign: "center" },
+  estrelas: { flexDirection: "row", gap: 8, marginBottom: 16 },
+  inputObservacao: { width: "100%", backgroundColor: "#FFFFFF", marginBottom: 16 },
+  botaoEnviarAvaliacao: { backgroundColor: "#1565C0", borderRadius: 12, paddingVertical: 12, width: "100%", alignItems: "center" },
   botaoDesabilitado: { backgroundColor: "#D1D5DB" },
   botaoEnviarAvaliacaoTexto: { color: "#FFFFFF", fontWeight: "bold", fontSize: 15 },
   pularAvaliacao: { color: "#9E9E9E", marginTop: 14, fontSize: 14 },

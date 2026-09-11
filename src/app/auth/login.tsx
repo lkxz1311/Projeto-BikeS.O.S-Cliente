@@ -1,6 +1,6 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { router } from "expo-router";
-import { useState } from "react";
+import { router, useFocusEffect } from "expo-router";
+import { useState, useCallback } from "react";
 import { Alert, StyleSheet, View } from "react-native";
 import { ActivityIndicator, Button, Text, TextInput } from "react-native-paper";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -11,6 +11,27 @@ export default function Login() {
   const [senha, setSenha] = useState("");
   const [mostrarSenha, setMostrarSenha] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [checandoSessao, setChecandoSessao] = useState(true);
+
+  useFocusEffect(
+    useCallback(() => {
+      verificarUsuarioLogado();
+    }, [])
+  );
+
+  async function verificarUsuarioLogado() {
+    try {
+      const userId = await AsyncStorage.getItem("userId");
+      if (userId) {
+        router.replace("/main/home");
+        return;
+      }
+    } catch (error) {
+      console.log("Erro ao checar sessão:", error);
+    } finally {
+      setChecandoSessao(false);
+    }
+  }
 
   async function entrar() {
     if (!email || !senha) {
@@ -44,12 +65,19 @@ export default function Login() {
       setSenha("");
 
       router.replace("/main/home");
-
     } catch (error: any) {
       Alert.alert("Erro", "Não foi possível conectar ao servidor");
     } finally {
       setLoading(false);
     }
+  }
+
+  if (checandoSessao) {
+    return (
+      <View style={styles.loadingScreen}>
+        <ActivityIndicator size="large" color="#1565C0" />
+      </View>
+    );
   }
 
   return (
@@ -111,6 +139,12 @@ export default function Login() {
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
+    backgroundColor: "#F5F9FF",
+  },
+  loadingScreen: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
     backgroundColor: "#F5F9FF",
   },
   container: {

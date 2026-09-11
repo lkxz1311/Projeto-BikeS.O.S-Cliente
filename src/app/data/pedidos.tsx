@@ -66,3 +66,7 @@ export function atualizarStatusPedido(id: string) {
     pedido.status = "Finalizado";
   }
 }
+
+export default function PedidosData() {
+  return null;
+}

@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { ScrollView, StyleSheet, View, Alert } from "react-native";
+import { useEffect, useState, useCallback } from "react";
+import { ScrollView, StyleSheet, View, Alert, RefreshControl } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Button, Card, RadioButton, Text, TextInput } from "react-native-paper";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
@@ -21,6 +21,7 @@ export default function Solicitar() {
   const [sosJaCriado, setSosJaCriado] = useState(false);
   const [erro, setErro] = useState("");
   const [loading, setLoading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
 
   useEffect(() => {
     if (sos === "true" && !sosJaCriado) {
@@ -28,6 +29,22 @@ export default function Solicitar() {
       setSosJaCriado(true);
     }
   }, [sos, sosJaCriado]);
+
+  // Função disparada ao puxar a tela para baixo
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    // Reseta/limpa os campos do formulário para o estado inicial
+    setErro("");
+    setProblema("");
+    setBike("");
+    setLocalizacao("");
+    setTelefone("");
+    setDataAgendada("");
+    setHorarioAgendado("");
+    setAgendar(false);
+    setPagamento("Pix");
+    setRefreshing(false);
+  }, []);
 
   function formatarTelefone(valor: string) {
     const numeros = valor.replace(/\D/g, "").slice(0, 11);
@@ -148,7 +165,18 @@ export default function Solicitar() {
 
   return (
     <SafeAreaView style={styles.safeArea} edges={["top"]}>
-      <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+      <ScrollView
+        style={styles.container}
+        contentContainerStyle={styles.content}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            colors={["#1565C0"]}
+            tintColor="#1565C0"
+          />
+        }
+      >
         <View style={styles.header}>
           <View>
             <Text style={styles.titulo}>Solicitar serviço</Text>
