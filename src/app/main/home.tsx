@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from "react";
+import React, { useState, useCallback, useRef, useEffect } from "react";
 import {
   ScrollView, StyleSheet, TouchableOpacity, View, Alert, Animated, TextInput, Keyboard, TouchableWithoutFeedback,
 } from "react-native";
@@ -9,13 +9,16 @@ import {
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useFocusEffect, router } from "expo-router";
+import MapView, { Marker, PROVIDER_GOOGLE } from "react-native-maps";
 import { listarPedidosService } from "../../../services/pedidoService";
+import { buscarRastreamentoService } from "../../../services/localizacaoService";
 
 type Pedido = {
   id: string;
   codigo: string;
   tipo: string;
   problema: string;
+  localizacao: string;
   status: string;
   createdAt: string;
   tecnicoId?: string;
@@ -57,11 +60,46 @@ export default function Home() {
   const [enviandoAv, setEnviandoAv]           = useState(false);
   const [avEnviada, setAvEnviada]             = useState<string[]>([]);
 
+  // Rastreamento
+  const [rastreamento, setRastreamento] = useState<{ latitude: number; longitude: number } | null>(null);
+
   useFocusEffect(
     useCallback(() => {
       carregarDados();
     }, [])
   );
+
+  // Polling para rastreamento
+  React.useEffect(() => {
+    let intervalo: NodeJS.Timeout;
+
+    async function fetchRastreamento() {
+      if (!sheetPedido) return;
+      const res = await buscarRastreamentoService(sheetPedido.id);
+      if (res.ok && res.data) {
+        if (res.data.coordenadas) {
+          setRastreamento(res.data.coordenadas);
+        } else {
+          setRastreamento(null);
+        }
+      }
+    }
+
+    if (
+      sheetVisivel &&
+      sheetPedido &&
+      ["Técnico aceitou", "Aceito pelo técnico", "Em atendimento"].includes(sheetPedido.status)
+    ) {
+      fetchRastreamento();
+      intervalo = setInterval(fetchRastreamento, 10000); // 10s poll
+    } else {
+      setRastreamento(null);
+    }
+
+    return () => {
+      if (intervalo) clearInterval(intervalo);
+    };
+  }, [sheetPedido, sheetVisivel]);
 
   async function carregarDados() {
     try {
@@ -388,6 +426,41 @@ export default function Home() {
               <>
                 <PassosStatus status={sheetPedido.status} />
 
+                {/* Mapa de Rastreamento */}
+                {rastreamento && (
+                  <View style={styles.mapContainer}>
+                    <Text style={styles.mapTitulo}>Acompanhe o Técnico</Text>
+                    <MapView
+                      style={styles.map}
+                      provider={PROVIDER_GOOGLE}
+                      initialRegion={{
+                        latitude: rastreamento.latitude,
+                        longitude: rastreamento.longitude,
+                        latitudeDelta: 0.02,
+                        longitudeDelta: 0.02,
+                      }}
+                      region={{
+                        latitude: rastreamento.latitude,
+                        longitude: rastreamento.longitude,
+                        latitudeDelta: 0.02,
+                        longitudeDelta: 0.02,
+                      }}
+                    >
+                      <Marker coordinate={rastreamento} title="Técnico" pinColor="blue" />
+                      {sheetPedido.localizacao && sheetPedido.localizacao.includes(',') && !isNaN(Number(sheetPedido.localizacao.split(',')[0])) && (
+                        <Marker 
+                          coordinate={{
+                            latitude: Number(sheetPedido.localizacao.split(',')[0]),
+                            longitude: Number(sheetPedido.localizacao.split(',')[1])
+                          }} 
+                          title="Sua Localização" 
+                          pinColor="red" 
+                        />
+                      )}
+                    </MapView>
+                  </View>
+                )}
+
                 {/* botão de avanço */}
                 {LABEL_BOTAO[sheetPedido.status] && (
                   <TouchableOpacity
@@ -569,6 +642,10 @@ const styles = StyleSheet.create({
   sheetTitulo:  { fontSize: 18, fontWeight: "bold", color: "#1E2A38" },
   sheetProblema:{ fontSize: 14, color: "#374151", marginTop: 6 },
   sheetData:    { fontSize: 13, color: "#9CA3AF", marginTop: 2 },
+  
+  mapContainer: { marginVertical: 16, height: 200, borderRadius: 12, overflow: 'hidden' },
+  mapTitulo:    { fontSize: 14, fontWeight: "bold", color: "#1E2A38", marginBottom: 8 },
+  map:          { flex: 1 },
 
   passosRow:           { flexDirection: "row", alignItems: "flex-start", marginBottom: 20 },
   passoItem:           { flex: 1, alignItems: "center", position: "relative" },
